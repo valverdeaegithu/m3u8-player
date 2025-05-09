@@ -1,299 +1,141 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>Live Stream Player</title>
-    <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
-    <meta name="referrer" content="no-referrer"/>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/plyr@3.7.8/dist/plyr.css"/>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Stream Player</title>
     <style>
-        :root {
-            --plyr-color-main: #00a8ff;
-            --plyr-video-controls-background: rgba(0,0,0,0.7);
-            --plyr-video-control-color: #fff;
-            --plyr-control-radius: 8px;
-            --plyr-control-spacing: 10px;
-        }
-        
         body {
-            background-color: #000;
+            background: #000;
             margin: 0;
             padding: 0;
             font-family: Arial, sans-serif;
             color: white;
             height: 100vh;
-            display: flex;
-            flex-direction: column;
             overflow: hidden;
         }
-        
-        .header {
-            padding: 12px 15px;
-            background: rgba(0,0,0,0.8);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid #333;
-        }
-        
-        .logo {
-            font-weight: bold;
-            color: var(--plyr-color-main);
-            font-size: 1.1em;
-        }
-        
         .player-container {
-            flex: 1;
             position: relative;
+            height: 100%;
         }
-        
         #player {
             width: 100%;
             height: 100%;
-            background: #000;
         }
-        
-        .loading {
+        .status-overlay {
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
+            background: rgba(0,0,0,0.9);
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            background: rgba(0,0,0,0.9);
-            z-index: 10;
-        }
-        
-        .spinner {
-            width: 40px;
-            height: 40px;
-            border: 4px solid rgba(255,255,255,0.3);
-            border-radius: 50%;
-            border-top-color: var(--plyr-color-main);
-            animation: spin 1s linear infinite;
-            margin-bottom: 15px;
-        }
-        
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        
-        .notification {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background: var(--plyr-color-main);
-            color: white;
-            padding: 12px 18px;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-            z-index: 1000;
-            cursor: pointer;
-            transform: translateY(100px);
-            opacity: 0;
-            transition: all 0.3s ease;
-        }
-        
-        .notification.show {
-            transform: translateY(0);
-            opacity: 1;
-        }
-        
-        .error-message {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            background: rgba(0,0,0,0.9);
-            z-index: 10;
-            padding: 20px;
-            text-align: center;
-        }
-        
-        .btn {
-            background: var(--plyr-color-main);
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            margin-top: 15px;
-            cursor: pointer;
+            z-index: 100;
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        <div class="logo">Live Stream Player</div>
-    </div>
-    
     <div class="player-container">
-        <div class="loading" id="loading">
-            <div class="spinner"></div>
-            <div>Loading stream...</div>
+        <div class="status-overlay" id="statusOverlay">
+            <div id="statusMessage">Loading SonyLiv stream...</div>
+            <div id="errorDetails" style="color:red; margin-top:10px;"></div>
         </div>
-        
-        <div class="error-message" id="error-message" style="display: none;">
-            <div id="error-text"></div>
-            <button class="btn" id="retry-btn">Retry</button>
-        </div>
-        
-        <video id="player" autoplay muted controls crossorigin playsinline></video>
+        <video id="player" playsinline controls></video>
     </div>
 
-    <div class="notification" id="notification">
-        Join @matcheslinks for more updates →
-    </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.4.3/dist/hls.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/plyr@3.7.8/dist/plyr.min.js"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const video = document.getElementById('player');
-            const loadingElement = document.getElementById('loading');
-            const errorElement = document.getElementById('error-message');
-            const errorText = document.getElementById('error-text');
-            const retryBtn = document.getElementById('retry-btn');
-            const notification = document.getElementById('notification');
-            
-            // Get stream URL from query parameter
-            const urlParams = new URLSearchParams(window.location.search);
-            let source = urlParams.get('url');
-            
-            // Fallback to default stream if no URL provided
-            if (!source) {
-                source = "https://sonydaimenew.akamaized.net/hls/live/2022320/DAI16ME-V3/master_mdh.m3u8?hdnea=exp=1746761745~acl=/*~id=57909350488196105530180490196276~hmac=47367e39c37ef7bf92cb0864bc4fde31ff604844dcdf3e7165b65d776d691c67";
-            }
-            
-            let hls;
-            let player;
-            
-            function initPlayer() {
-                loadingElement.style.display = 'flex';
-                errorElement.style.display = 'none';
-                
-                if (Hls.isSupported()) {
-                    if (hls) hls.destroy();
-                    
-                    hls = new Hls({
-                        maxMaxBufferLength: 100,
-                        enableWorker: true,
-                        lowLatencyMode: true
-                    });
-                    
-                    hls.loadSource(source);
-                    hls.attachMedia(video);
-                    
-                    hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                        const availableQualities = hls.levels.map(level => level.height);
-                        const defaultQuality = availableQualities[0];
-                        
-                        player = new Plyr(video, {
-                            controls: [
-                                'play-large',
-                                'play',
-                                'progress',
-                                'current-time',
-                                'mute',
-                                'volume',
-                                'settings',
-                                'fullscreen'
-                            ],
-                            settings: ['quality', 'speed'],
-                            quality: {
-                                default: defaultQuality,
-                                options: availableQualities,
-                                forced: true,
-                                onChange: (quality) => {
-                                    hls.levels.forEach((level, levelIndex) => {
-                                        if (level.height === quality) {
-                                            hls.currentLevel = levelIndex;
-                                        }
-                                    });
-                                }
-                            }
-                        });
-                        
-                        loadingElement.style.display = 'none';
-                        
-                        // Show notification after 5 seconds
-                        setTimeout(() => {
-                            notification.classList.add('show');
-                            setTimeout(() => {
-                                notification.classList.remove('show');
-                            }, 8000);
-                        }, 5000);
-                    });
-                    
-                    hls.on(Hls.Events.ERROR, (event, data) => {
-                        if (data.fatal) {
-                            let errorMsg = 'Error loading stream';
-                            
-                            switch(data.type) {
-                                case Hls.ErrorTypes.NETWORK_ERROR:
-                                    errorMsg = 'Network error: Failed to load stream';
-                                    break;
-                                case Hls.ErrorTypes.MEDIA_ERROR:
-                                    errorMsg = 'Media error: Corrupted stream data';
-                                    hls.recoverMediaError();
-                                    break;
-                                default:
-                                    errorMsg = 'Error loading stream';
-                                    break;
-                            }
-                            
-                            loadingElement.style.display = 'none';
-                            errorText.textContent = errorMsg;
-                            errorElement.style.display = 'flex';
-                        }
-                    });
-                    
-                } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                    video.src = source;
-                    player = new Plyr(video);
-                    loadingElement.style.display = 'none';
-                } else {
-                    loadingElement.style.display = 'none';
-                    errorText.textContent = 'Your browser does not support HLS playback';
-                    errorElement.style.display = 'flex';
-                }
-            }
-            
-            // Handle retry button
-            retryBtn.addEventListener('click', initPlayer);
-            
-            // Handle notification click
-            notification.addEventListener('click', () => {
-                window.open('https://t.me/matcheslinks', '_blank');
-                notification.classList.remove('show');
-            });
-            
-            // Handle fullscreen orientation
-            document.addEventListener('fullscreenchange', () => {
-                if (document.fullscreenElement) {
-                    if (screen.orientation?.lock) {
-                        screen.orientation.lock('landscape').catch(console.error);
-                    }
-                } else {
-                    if (screen.orientation?.unlock) {
-                        screen.orientation.unlock().catch(console.error);
-                    }
-                }
-            });
-            
-            // Initialize player
-            initPlayer();
-        });
-    </script>
-<script defer src="https://static.cloudflareinsights.com/beacon.min.js/vcd15cbe7772f49c399c6a5babf22c1241717689176015" integrity="sha512-ZpsOmlRQV6y907TI0dKBHq9Md29nnaEIPlkf84rnaERnq6zvWvPUqr2ft8M1aS28oN72PdrCzSjY4U6VaAw1EQ==" data-cf-beacon='{"rayId":"93cdf2a4be2e797a","version":"2025.4.0-1-g37f21b1","r":1,"token":"443afb7c1f6846a398db1db4a6718dae","serverTiming":{"name":{"cfExtPri":true,"cfL4":true,"cfSpeedBrain":true,"cfCacheStatus":true}}}' crossorigin="anonymous"></script>
-</body>
-</html>
+        // Try both HLS and MPEG-DASH approaches
+        const video = document.getElementById('player');
+        const statusOverlay = document.getElementById('statusOverlay');
+        const statusMessage = document.getElementById('statusMessage');
+        const errorDetails = document.getElementById('errorDetails');
+        
+        // Get URL from query parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        const streamUrl = urlParams.get('url') || '';
 
+        function tryHLS() {
+            if (!window.Hls) {
+                loadScript('https://cdn.jsdelivr.net/npm/hls.js@1.4.3/dist/hls.min.js', initHLS);
+            } else {
+                initHLS();
+            }
+        }
+
+        function initHLS() {
+            if (Hls.isSupported()) {
+                const hls = new Hls({
+                    xhrSetup: function(xhr) {
+                        xhr.setRequestHeader('Origin', 'https://www.sonyliv.com');
+                        xhr.setRequestHeader('Referer', 'https://www.sonyliv.com/');
+                    },
+                    enableWorker: true
+                });
+                
+                hls.loadSource(streamUrl);
+                hls.attachMedia(video);
+                
+                hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                    statusOverlay.style.display = 'none';
+                    video.play().catch(e => {
+                        errorDetails.textContent = 'Autoplay blocked: ' + e.message;
+                    });
+                });
+                
+                hls.on(Hls.Events.ERROR, (event, data) => {
+                    if (data.fatal) {
+                        errorDetails.textContent = `HLS Error: ${data.type} - ${data.details}`;
+                        tryDASH(); // Fallback to DASH
+                    }
+                });
+            } else {
+                tryDASH();
+            }
+        }
+
+        function tryDASH() {
+            if (!window.dashjs) {
+                loadScript('https://cdn.jsdelivr.net/npm/dashjs@4.5.0/dist/dash.all.min.js', initDASH);
+            } else {
+                initDASH();
+            }
+        }
+
+        function initDASH() {
+            const player = dashjs.MediaPlayer().create();
+            player.updateSettings({
+                streaming: {
+                    buffering: {
+                        bufferTimeAtTopQuality: 30
+                    }
+                }
+            });
+            player.initialize(video, streamUrl, true);
+            
+            player.on(dashjs.MediaPlayer.events.ERROR, (e) => {
+                errorDetails.textContent = `DASH Error: ${e.error}`;
+                statusMessage.textContent = 'Failed to load SonyLiv stream';
+            });
+        }
+
+        function loadScript(src, callback) {
+            const script = document.createElement('script');
+            script.src = src;
+            script.onload = callback;
+            document.head.appendChild(script);
+        }
+
+        // Start with HLS
+        if (streamUrl.includes('.m3u8')) {
+            tryHLS();
+        } else if (streamUrl.includes('.mpd')) {
+            tryDASH();
+        } else {
+            errorDetails.textContent = 'Invalid stream URL format';
+        }
+    </script>
 </body>
 </html>
