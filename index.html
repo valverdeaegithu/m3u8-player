@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Live Stream Player</title>
+    <title>SonyLiv Stream Player</title>
     <style>
         body {
             background: #000;
@@ -35,13 +35,11 @@
             align-items: center;
             z-index: 100;
             text-align: center;
-            padding: 20px;
-            box-sizing: border-box;
         }
         .spinner {
             border: 5px solid rgba(255,255,255,0.3);
             border-radius: 50%;
-            border-top-color: #00a8ff;
+            border-top-color: #d10b05; /* SonyLiv red */
             width: 50px;
             height: 50px;
             animation: spin 1s linear infinite;
@@ -51,19 +49,17 @@
             to { transform: rotate(360deg); }
         }
         .btn {
-            background: #00a8ff;
+            background: #d10b05;
             color: white;
             border: none;
             padding: 10px 20px;
             border-radius: 5px;
             margin-top: 15px;
             cursor: pointer;
-            font-size: 16px;
         }
         .error-details {
             color: #ff4444;
-            margin-top: 15px;
-            font-size: 14px;
+            margin: 15px 20px;
             max-width: 80%;
             word-break: break-word;
         }
@@ -73,12 +69,12 @@
     <div class="player-container">
         <div class="status-overlay" id="statusOverlay">
             <div class="spinner" id="spinner"></div>
-            <div id="statusMessage">Connecting to stream...</div>
+            <div id="statusMessage">Connecting to SonyLiv...</div>
             <div class="error-details" id="errorDetails"></div>
-            <button class="btn" id="retryBtn" style="display:none;">Retry Connection</button>
-            <button class="btn" id="altPlayerBtn" style="display:none; margin-top:10px;">Try Alternative Player</button>
+            <button class="btn" id="retryBtn" style="display:none;">Refresh Token</button>
+            <div style="margin-top:20px;font-size:12px;color:#777;">Token expires: <span id="tokenExpiry"></span></div>
         </div>
-        <video id="player" playsinline controls></video>
+        <video id="player" playsinline></video>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.4.3/dist/hls.min.js"></script>
@@ -89,49 +85,35 @@
         const errorDetails = document.getElementById('errorDetails');
         const spinner = document.getElementById('spinner');
         const retryBtn = document.getElementById('retryBtn');
-        const altPlayerBtn = document.getElementById('altPlayerBtn');
+        const tokenExpiry = document.getElementById('tokenExpiry');
         
-        // Get URL from query parameter
-        const urlParams = new URLSearchParams(window.location.search);
-        let streamUrl = urlParams.get('url') || '';
-        
-        // Clean the URL if it's wrapped in quotes
-        if (streamUrl) {
-            streamUrl = streamUrl.replace(/^"(.*)"$/, '$1').trim();
+        // Extract token expiry time
+        function getTokenExpiry(url) {
+            const match = url.match(/exp=(\d+)/);
+            if (match) {
+                const expiryTime = parseInt(match[1]) * 1000;
+                return new Date(expiryTime).toLocaleString();
+            }
+            return "Unknown";
         }
         
-        let hls;
-        let retryCount = 0;
-        const MAX_RETRIES = 3;
-        const RETRY_DELAY = 3000;
-
+        let streamUrl = "https://sonydaimenew.akamaized.net/hls/live/2094589/DAI05ME-V3/master_mdh.m3u8?hdnea=exp=1746925757~acl=/*~id=42402671580995565080038724748958~hmac=25b649062974a27849ca27d45a1685fcbe439e47fb50ff44187dd07fcc40c5be";
+        tokenExpiry.textContent = getTokenExpiry(streamUrl);
+        
         function initPlayer() {
-            statusMessage.textContent = "Connecting to stream...";
+            statusMessage.textContent = "Initializing SonyLiv stream...";
             errorDetails.textContent = "";
             retryBtn.style.display = "none";
-            altPlayerBtn.style.display = "none";
             spinner.style.display = "block";
             
-            if (!streamUrl) {
-                showError("No stream URL provided. Please add ?url= parameter");
-                return;
-            }
-            
             if (Hls.isSupported()) {
-                if (hls) hls.destroy();
-                
-                hls = new Hls({
-                    maxMaxBufferLength: 60,
-                    maxBufferLength: 30,
-                    maxBufferSize: 60 * 1000 * 1000,
-                    lowLatencyMode: true,
+                const hls = new Hls({
                     enableWorker: true,
-                    fragLoadingTimeOut: 20000,
-                    manifestLoadingTimeOut: 20000,
+                    lowLatencyMode: true,
                     xhrSetup: function(xhr) {
-                        // Add headers that might help with restricted streams
-                        xhr.setRequestHeader('Origin', window.location.origin);
-                        xhr.setRequestHeader('Referer', window.location.href);
+                        // SonyLiv required headers
+                        xhr.setRequestHeader('Origin', 'https://www.sonyliv.com');
+                        xhr.setRequestHeader('Referer', 'https://www.sonyliv.com/');
                     }
                 });
                 
@@ -140,83 +122,48 @@
                 
                 hls.on(Hls.Events.MANIFEST_PARSED, function() {
                     statusOverlay.style.display = "none";
-                    video.play().catch(e => {
-                        showError("Autoplay blocked: " + e.message);
-                    });
                 });
                 
                 hls.on(Hls.Events.ERROR, function(event, data) {
                     if (data.fatal) {
-                        let errorMsg = "Network Error";
+                        let errorMsg = "SonyLiv Error: ";
                         
-                        switch(data.type) {
-                            case Hls.ErrorTypes.NETWORK_ERROR:
-                                errorMsg = "Network Error";
-                                if (data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT) {
-                                    errorMsg = "Server Timeout";
-                                } else if (data.response && data.response.code === 403) {
-                                    errorMsg = "Access Denied (403)";
-                                } else if (data.response && data.response.code === 404) {
-                                    errorMsg = "Stream Not Found (404)";
-                                } else if (data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR) {
-                                    errorMsg = "Segment Loading Failed";
-                                }
-                                break;
-                            case Hls.ErrorTypes.MEDIA_ERROR:
-                                errorMsg = "Media Error";
-                                hls.recoverMediaError();
-                                return;
-                            case Hls.ErrorTypes.OTHER_ERROR:
-                                errorMsg = "Server Error";
-                                break;
+                        if (data.response && data.response.code === 403) {
+                            errorMsg += "Token expired or invalid";
+                        } else if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                            errorMsg += "Network blocked";
+                        } else {
+                            errorMsg += "DRM content cannot be played";
                         }
                         
-                        showError(`${errorMsg}: ${data.details || 'No details available'}`);
+                        errorDetails.textContent = errorMsg;
+                        spinner.style.display = "none";
+                        retryBtn.style.display = "block";
                     }
                 });
                 
             } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                // Safari native HLS
                 video.src = streamUrl;
-                video.addEventListener('loadedmetadata', function() {
-                    statusOverlay.style.display = "none";
-                    video.play();
-                });
-                video.addEventListener('error', function(e) {
-                    showError("Safari cannot load this stream");
+                video.addEventListener('error', () => {
+                    errorDetails.textContent = "Safari cannot play DRM-protected SonyLiv streams";
+                    spinner.style.display = "none";
                 });
             } else {
-                showError("Your browser doesn't support HLS streaming");
+                errorDetails.textContent = "Browser doesn't support SonyLiv streams";
+                spinner.style.display = "none";
             }
-        }
-        
-        function showError(message) {
-            spinner.style.display = "none";
-            statusMessage.textContent = "Connection Failed";
-            errorDetails.textContent = message;
-            
-            if (retryCount < MAX_RETRIES) {
-                retryCount++;
-                statusMessage.textContent += ` (Retrying ${retryCount}/${MAX_RETRIES})`;
-                setTimeout(initPlayer, RETRY_DELAY);
-            } else {
-                retryBtn.style.display = "block";
-                altPlayerBtn.style.display = "block";
-            }
-        }
-        
-        function tryAlternativePlayer() {
-            window.open(`https://hls-js.netlify.app/demo/?src=${encodeURIComponent(streamUrl)}`, '_blank');
         }
         
         retryBtn.addEventListener('click', function() {
-            retryCount = 0;
-            initPlayer();
+            // In a real implementation, you'd need to fetch a fresh token from your backend
+            errorDetails.textContent = "You need to generate a new token from SonyLiv";
         });
         
-        altPlayerBtn.addEventListener('click', tryAlternativePlayer);
+        // Check token expiry every minute
+        setInterval(() => {
+            tokenExpiry.textContent = getTokenExpiry(streamUrl);
+        }, 60000);
         
-        // Initialize player when page loads
         initPlayer();
     </script>
 </body>
