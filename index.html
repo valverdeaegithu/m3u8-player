@@ -1,297 +1,223 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Live Stream Player</title>
-    <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
-    <meta name="referrer" content="no-referrer"/>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/plyr@3.7.8/dist/plyr.css"/>
     <style>
-        :root {
-            --plyr-color-main: #00a8ff;
-            --plyr-video-controls-background: rgba(0,0,0,0.7);
-            --plyr-video-control-color: #fff;
-            --plyr-control-radius: 8px;
-            --plyr-control-spacing: 10px;
-        }
-        
         body {
-            background-color: #000;
+            background: #000;
             margin: 0;
             padding: 0;
             font-family: Arial, sans-serif;
             color: white;
             height: 100vh;
-            display: flex;
-            flex-direction: column;
             overflow: hidden;
         }
-        
-        .header {
-            padding: 12px 15px;
-            background: rgba(0,0,0,0.8);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid #333;
-        }
-        
-        .logo {
-            font-weight: bold;
-            color: var(--plyr-color-main);
-            font-size: 1.1em;
-        }
-        
         .player-container {
-            flex: 1;
             position: relative;
+            height: 100%;
         }
-        
         #player {
             width: 100%;
             height: 100%;
-            background: #000;
         }
-        
-        .loading {
+        .status-overlay {
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
+            background: rgba(0,0,0,0.9);
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            background: rgba(0,0,0,0.9);
-            z-index: 10;
+            z-index: 100;
+            text-align: center;
+            padding: 20px;
+            box-sizing: border-box;
         }
-        
         .spinner {
-            width: 40px;
-            height: 40px;
-            border: 4px solid rgba(255,255,255,0.3);
+            border: 5px solid rgba(255,255,255,0.3);
             border-radius: 50%;
-            border-top-color: var(--plyr-color-main);
+            border-top-color: #00a8ff;
+            width: 50px;
+            height: 50px;
             animation: spin 1s linear infinite;
-            margin-bottom: 15px;
+            margin-bottom: 20px;
         }
-        
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
-        
-        .notification {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background: var(--plyr-color-main);
-            color: white;
-            padding: 12px 18px;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-            z-index: 1000;
-            cursor: pointer;
-            transform: translateY(100px);
-            opacity: 0;
-            transition: all 0.3s ease;
-        }
-        
-        .notification.show {
-            transform: translateY(0);
-            opacity: 1;
-        }
-        
-        .error-message {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            background: rgba(0,0,0,0.9);
-            z-index: 10;
-            padding: 20px;
-            text-align: center;
-        }
-        
         .btn {
-            background: var(--plyr-color-main);
+            background: #00a8ff;
             color: white;
             border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
+            padding: 10px 20px;
+            border-radius: 5px;
             margin-top: 15px;
             cursor: pointer;
+            font-size: 16px;
+        }
+        .error-details {
+            color: #ff4444;
+            margin-top: 15px;
+            font-size: 14px;
+            max-width: 80%;
+            word-break: break-word;
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        <div class="logo">Live Stream Player</div>
-    </div>
-    
     <div class="player-container">
-        <div class="loading" id="loading">
-            <div class="spinner"></div>
-            <div>Loading stream...</div>
+        <div class="status-overlay" id="statusOverlay">
+            <div class="spinner" id="spinner"></div>
+            <div id="statusMessage">Connecting to stream...</div>
+            <div class="error-details" id="errorDetails"></div>
+            <button class="btn" id="retryBtn" style="display:none;">Retry Connection</button>
+            <button class="btn" id="altPlayerBtn" style="display:none; margin-top:10px;">Try Alternative Player</button>
         </div>
-        
-        <div class="error-message" id="error-message" style="display: none;">
-            <div id="error-text"></div>
-            <button class="btn" id="retry-btn">Retry</button>
-        </div>
-        
-        <video id="player" autoplay muted controls crossorigin playsinline></video>
-    </div>
-
-    <div class="notification" id="notification">
-        Join @matcheslinks for more updates →
+        <video id="player" playsinline controls></video>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.4.3/dist/hls.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/plyr@3.7.8/dist/plyr.min.js"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const video = document.getElementById('player');
-            const loadingElement = document.getElementById('loading');
-            const errorElement = document.getElementById('error-message');
-            const errorText = document.getElementById('error-text');
-            const retryBtn = document.getElementById('retry-btn');
-            const notification = document.getElementById('notification');
+        const video = document.getElementById('player');
+        const statusOverlay = document.getElementById('statusOverlay');
+        const statusMessage = document.getElementById('statusMessage');
+        const errorDetails = document.getElementById('errorDetails');
+        const spinner = document.getElementById('spinner');
+        const retryBtn = document.getElementById('retryBtn');
+        const altPlayerBtn = document.getElementById('altPlayerBtn');
+        
+        // Get URL from query parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        let streamUrl = urlParams.get('url') || '';
+        
+        // Clean the URL if it's wrapped in quotes
+        if (streamUrl) {
+            streamUrl = streamUrl.replace(/^"(.*)"$/, '$1').trim();
+        }
+        
+        let hls;
+        let retryCount = 0;
+        const MAX_RETRIES = 3;
+        const RETRY_DELAY = 3000;
+
+        function initPlayer() {
+            statusMessage.textContent = "Connecting to stream...";
+            errorDetails.textContent = "";
+            retryBtn.style.display = "none";
+            altPlayerBtn.style.display = "none";
+            spinner.style.display = "block";
             
-            // Get stream URL from query parameter
-            const urlParams = new URLSearchParams(window.location.search);
-            let source = urlParams.get('url');
-            
-            // Fallback to default stream if no URL provided
-            if (!source) {
-                source = "https://sonydaimenew.akamaized.net/hls/live/2022320/DAI16ME-V3/master_mdh.m3u8?hdnea=exp=1746761745~acl=/*~id=57909350488196105530180490196276~hmac=47367e39c37ef7bf92cb0864bc4fde31ff604844dcdf3e7165b65d776d691c67";
+            if (!streamUrl) {
+                showError("No stream URL provided. Please add ?url= parameter");
+                return;
             }
             
-            let hls;
-            let player;
-            
-            function initPlayer() {
-                loadingElement.style.display = 'flex';
-                errorElement.style.display = 'none';
+            if (Hls.isSupported()) {
+                if (hls) hls.destroy();
                 
-                if (Hls.isSupported()) {
-                    if (hls) hls.destroy();
-                    
-                    hls = new Hls({
-                        maxMaxBufferLength: 100,
-                        enableWorker: true,
-                        lowLatencyMode: true
+                hls = new Hls({
+                    maxMaxBufferLength: 60,
+                    maxBufferLength: 30,
+                    maxBufferSize: 60 * 1000 * 1000,
+                    lowLatencyMode: true,
+                    enableWorker: true,
+                    fragLoadingTimeOut: 20000,
+                    manifestLoadingTimeOut: 20000,
+                    xhrSetup: function(xhr) {
+                        // Add headers that might help with restricted streams
+                        xhr.setRequestHeader('Origin', window.location.origin);
+                        xhr.setRequestHeader('Referer', window.location.href);
+                    }
+                });
+                
+                hls.loadSource(streamUrl);
+                hls.attachMedia(video);
+                
+                hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                    statusOverlay.style.display = "none";
+                    video.play().catch(e => {
+                        showError("Autoplay blocked: " + e.message);
                     });
-                    
-                    hls.loadSource(source);
-                    hls.attachMedia(video);
-                    
-                    hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                        const availableQualities = hls.levels.map(level => level.height);
-                        const defaultQuality = availableQualities[0];
+                });
+                
+                hls.on(Hls.Events.ERROR, function(event, data) {
+                    if (data.fatal) {
+                        let errorMsg = "Network Error";
                         
-                        player = new Plyr(video, {
-                            controls: [
-                                'play-large',
-                                'play',
-                                'progress',
-                                'current-time',
-                                'mute',
-                                'volume',
-                                'settings',
-                                'fullscreen'
-                            ],
-                            settings: ['quality', 'speed'],
-                            quality: {
-                                default: defaultQuality,
-                                options: availableQualities,
-                                forced: true,
-                                onChange: (quality) => {
-                                    hls.levels.forEach((level, levelIndex) => {
-                                        if (level.height === quality) {
-                                            hls.currentLevel = levelIndex;
-                                        }
-                                    });
+                        switch(data.type) {
+                            case Hls.ErrorTypes.NETWORK_ERROR:
+                                errorMsg = "Network Error";
+                                if (data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT) {
+                                    errorMsg = "Server Timeout";
+                                } else if (data.response && data.response.code === 403) {
+                                    errorMsg = "Access Denied (403)";
+                                } else if (data.response && data.response.code === 404) {
+                                    errorMsg = "Stream Not Found (404)";
+                                } else if (data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR) {
+                                    errorMsg = "Segment Loading Failed";
                                 }
-                            }
-                        });
-                        
-                        loadingElement.style.display = 'none';
-                        
-                        // Show notification after 5 seconds
-                        setTimeout(() => {
-                            notification.classList.add('show');
-                            setTimeout(() => {
-                                notification.classList.remove('show');
-                            }, 8000);
-                        }, 5000);
-                    });
-                    
-                    hls.on(Hls.Events.ERROR, (event, data) => {
-                        if (data.fatal) {
-                            let errorMsg = 'Error loading stream';
-                            
-                            switch(data.type) {
-                                case Hls.ErrorTypes.NETWORK_ERROR:
-                                    errorMsg = 'Network error: Failed to load stream';
-                                    break;
-                                case Hls.ErrorTypes.MEDIA_ERROR:
-                                    errorMsg = 'Media error: Corrupted stream data';
-                                    hls.recoverMediaError();
-                                    break;
-                                default:
-                                    errorMsg = 'Error loading stream';
-                                    break;
-                            }
-                            
-                            loadingElement.style.display = 'none';
-                            errorText.textContent = errorMsg;
-                            errorElement.style.display = 'flex';
+                                break;
+                            case Hls.ErrorTypes.MEDIA_ERROR:
+                                errorMsg = "Media Error";
+                                hls.recoverMediaError();
+                                return;
+                            case Hls.ErrorTypes.OTHER_ERROR:
+                                errorMsg = "Server Error";
+                                break;
                         }
-                    });
-                    
-                } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                    video.src = source;
-                    player = new Plyr(video);
-                    loadingElement.style.display = 'none';
-                } else {
-                    loadingElement.style.display = 'none';
-                    errorText.textContent = 'Your browser does not support HLS playback';
-                    errorElement.style.display = 'flex';
-                }
+                        
+                        showError(`${errorMsg}: ${data.details || 'No details available'}`);
+                    }
+                });
+                
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                // Safari native HLS
+                video.src = streamUrl;
+                video.addEventListener('loadedmetadata', function() {
+                    statusOverlay.style.display = "none";
+                    video.play();
+                });
+                video.addEventListener('error', function(e) {
+                    showError("Safari cannot load this stream");
+                });
+            } else {
+                showError("Your browser doesn't support HLS streaming");
             }
+        }
+        
+        function showError(message) {
+            spinner.style.display = "none";
+            statusMessage.textContent = "Connection Failed";
+            errorDetails.textContent = message;
             
-            // Handle retry button
-            retryBtn.addEventListener('click', initPlayer);
-            
-            // Handle notification click
-            notification.addEventListener('click', () => {
-                window.open('https://t.me/matcheslinks', '_blank');
-                notification.classList.remove('show');
-            });
-            
-            // Handle fullscreen orientation
-            document.addEventListener('fullscreenchange', () => {
-                if (document.fullscreenElement) {
-                    if (screen.orientation?.lock) {
-                        screen.orientation.lock('landscape').catch(console.error);
-                    }
-                } else {
-                    if (screen.orientation?.unlock) {
-                        screen.orientation.unlock().catch(console.error);
-                    }
-                }
-            });
-            
-            // Initialize player
+            if (retryCount < MAX_RETRIES) {
+                retryCount++;
+                statusMessage.textContent += ` (Retrying ${retryCount}/${MAX_RETRIES})`;
+                setTimeout(initPlayer, RETRY_DELAY);
+            } else {
+                retryBtn.style.display = "block";
+                altPlayerBtn.style.display = "block";
+            }
+        }
+        
+        function tryAlternativePlayer() {
+            window.open(`https://hls-js.netlify.app/demo/?src=${encodeURIComponent(streamUrl)}`, '_blank');
+        }
+        
+        retryBtn.addEventListener('click', function() {
+            retryCount = 0;
             initPlayer();
         });
+        
+        altPlayerBtn.addEventListener('click', tryAlternativePlayer);
+        
+        // Initialize player when page loads
+        initPlayer();
     </script>
-<script defer src="https://static.cloudflareinsights.com/beacon.min.js/vcd15cbe7772f49c399c6a5babf22c1241717689176015" integrity="sha512-ZpsOmlRQV6y907TI0dKBHq9Md29nnaEIPlkf84rnaERnq6zvWvPUqr2ft8M1aS28oN72PdrCzSjY4U6VaAw1EQ==" data-cf-beacon='{"rayId":"93d9b551f9b249f3","version":"2025.4.0-1-g37f21b1","r":1,"token":"443afb7c1f6846a398db1db4a6718dae","serverTiming":{"name":{"cfExtPri":true,"cfL4":true,"cfSpeedBrain":true,"cfCacheStatus":true}}}' crossorigin="anonymous"></script>
-
 </body>
 </html>
